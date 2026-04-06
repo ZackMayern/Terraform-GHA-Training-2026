@@ -34,3 +34,10 @@ jobs:
         run: |
           echo Add other actions to build,
           echo test, and deploy your project.
+
+      - name: Create folder and file
+        run: |
+          mkdir -p Folder
+          cat > Folder/hello.txt <<'EOF'
+          Hello from GitHub Actions!
+          EOF
