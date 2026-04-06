@@ -39,5 +39,9 @@ jobs:
         run: |
           mkdir -p Folder
           cat > Folder/hello.txt <<'EOF'
-          Hello from GitHub Actions!
+          Hello from GitHub Actions! Copied to another folder.
           EOF
+      - name: Copy file to another folder
+        run: |
+          mkdir -p Folder2
+          cp Folder/hello.txt Folder2/
