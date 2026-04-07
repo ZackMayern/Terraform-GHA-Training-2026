@@ -33,7 +33,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "asahu-eks-cluster"
+  cluster_name    = "eks-cluster-2840263405"
   cluster_version = "1.35"
 
   vpc_id     = module.vpc.vpc_id
@@ -60,7 +60,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name = "my-eks-vpc"
+  name = "eks-vpc-2840263405"
   cidr = "10.0.0.0/16"
 
   azs             = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
