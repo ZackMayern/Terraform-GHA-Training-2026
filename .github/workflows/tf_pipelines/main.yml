@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: Terraform Pipeline
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   terraform-plan:
-    uses: ./.github/workflows/terraform-plan.yml
+    uses: ./.github/workflows/tf_pipelines/terraform-plan.yml
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -24,7 +24,7 @@ jobs:
   
   terraform-apply:
     needs: terraform-plan
-    uses: ./.github/workflows/terraform-apply.yml
+    uses: ./.github/workflows/tf_pipelines/terraform-apply.yml
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
