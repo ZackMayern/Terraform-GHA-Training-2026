@@ -21,6 +21,8 @@ jobs:
   docker-build:
     needs: build
     uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      run_number: ${{ github.run_number }}
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
