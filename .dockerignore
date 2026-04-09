@@ -1,0 +1,13 @@
+bin/
+obj/
+.git/
+.github/
+.vs/
+terraform/
+April Batch.txt
+Dockerfile*
+docker-compose*
+README*
+*.user
+*.suo
+*.swp
