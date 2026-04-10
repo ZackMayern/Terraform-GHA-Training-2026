@@ -1,0 +1,159 @@
+name: Manual Deploy To EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (default: run number)"
+        required: false
+        type: string
+      namespace:
+        description: "Kubernetes namespace"
+        required: false
+        default: "weather-app"
+        type: string
+      manifest_path:
+        description: "Path to Kubernetes manifest"
+        required: false
+        default: "manifests.yml"
+        type: string
+
+env:
+  CLUSTER_NAME: demo-eks-cluster1
+  ECR_REPOSITORY: weather-app-dotnet
+
+jobs:
+  deploy:
+    name: Build, Test, Push, Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set runtime variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_INPUT="${{ github.event.inputs.image_tag }}"
+          if [ -z "${TAG_INPUT}" ]; then
+            IMAGE_TAG="${GITHUB_RUN_NUMBER}"
+          else
+            IMAGE_TAG="${TAG_INPUT}"
+          fi
+
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          REGION="${{ secrets.AWS_REGION }}"
+          ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "ACCOUNT_ID=${ACCOUNT_ID}" >> "$GITHUB_ENV"
+          echo "ECR_REGISTRY=${ECR_REGISTRY}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+
+          echo "Resolved image URI: ${IMAGE_URI}"
+
+      - name: Build Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t weather-app-local:${IMAGE_TAG} .
+
+      - name: Smoke test Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run -d --rm --name weather-app-test -p 8080:8080 weather-app-local:${IMAGE_TAG}
+
+          for i in {1..20}; do
+            if curl -fsS "http://localhost:8080/api/weather?city=Mumbai" >/tmp/response.json; then
+              break
+            fi
+            sleep 3
+          done
+
+          grep -qi "mumbai" /tmp/response.json
+          cat /tmp/response.json
+
+      - name: Stop smoke test container
+        if: always()
+        shell: bash
+        run: |
+          docker stop weather-app-test || true
+
+      - name: Ensure ECR repository exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" >/dev/null 2>&1 || \
+          aws ecr create-repository --repository-name "${ECR_REPOSITORY}" >/dev/null
+
+      - name: Login to ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | \
+            docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+      - name: Push image to ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag weather-app-local:${IMAGE_TAG} "${IMAGE_URI}"
+          docker tag weather-app-local:${IMAGE_TAG} "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+          docker push "${IMAGE_URI}"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+      - name: Configure kubectl for EKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${{ secrets.AWS_REGION }}"
+
+      - name: Deploy manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -f "${{ github.event.inputs.manifest_path }}"
+
+      - name: Update deployment image
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl set image deployment/weather-app \
+            weather-app="${IMAGE_URI}" \
+            -n "${{ github.event.inputs.namespace }}"
+
+      - name: Wait for rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl rollout status deployment/weather-app -n "${{ github.event.inputs.namespace }}" --timeout=180s
+
+      - name: Show deployment status
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get pods -n "${{ github.event.inputs.namespace }}"
+          kubectl get svc weather-app-svc -n "${{ github.event.inputs.namespace }}"
+
+      - name: Job summary
+        shell: bash
+        run: |
+          {
+            echo "## Manual EKS Deployment"
+            echo "- Cluster: ${CLUSTER_NAME}"
+            echo "- Namespace: ${{ github.event.inputs.namespace }}"
+            echo "- Manifest: ${{ github.event.inputs.manifest_path }}"
+            echo "- Image: ${IMAGE_URI}"
+          } >> "$GITHUB_STEP_SUMMARY"
