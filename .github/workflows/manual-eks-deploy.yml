@@ -218,7 +218,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          kubectl rollout status deployment/weather-app-${SMOKE_COLOR} -n "${{ github.event.inputs.namespace }}" --timeout=180s
+          NAMESPACE="${{ github.event.inputs.namespace }}"
+          TARGET_DEPLOYMENT="weather-app-${SMOKE_COLOR}"
+          ROLLOUT_OK=false
+
+          for attempt in {1..6}; do
+            echo "Rollout check attempt ${attempt} for ${TARGET_DEPLOYMENT}"
+
+            if ! kubectl get deployment "${TARGET_DEPLOYMENT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+              echo "Deployment ${TARGET_DEPLOYMENT} not found yet; retrying."
+              sleep 5
+              continue
+            fi
+
+            if kubectl rollout status deployment/"${TARGET_DEPLOYMENT}" -n "${NAMESPACE}" --timeout=120s; then
+              ROLLOUT_OK=true
+              break
+            fi
+
+            echo "Rollout watch interrupted; retrying after re-resolving deployment state."
+            sleep 5
+          done
+
+          if [ "${ROLLOUT_OK}" != "true" ]; then
+            echo "Rollout did not stabilize for ${TARGET_DEPLOYMENT}."
+            kubectl get deployments -n "${NAMESPACE}"
+            kubectl get pods -n "${NAMESPACE}" -o wide
+            exit 1
+          fi
 
       - name: Smoke test target color
         shell: bash
